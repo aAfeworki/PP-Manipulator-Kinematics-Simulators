@@ -1,0 +1,62 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+
+# ====== Forward Kinematics Function for PP Robot ======
+def fk(q1, q2):
+    """
+    q1: vertical displacement
+    q2: horizontal displacement
+    """
+    x = q2
+    y = q1
+    return x, y
+
+# ====== Initial Parameters ======
+q1_0 = 5.0  # initial vertical displacement
+q2_0 = 3.0  # initial horizontal displacement
+
+# ====== Plot Setup ======
+fig, ax = plt.subplots()
+plt.subplots_adjust(left=0.1, bottom=0.3)  # extra space for sliders
+ax.set_xlim(-2, 12)
+ax.set_ylim(-2, 12)
+ax.set_aspect("equal")
+ax.set_title("PP Robot - Forward Kinematics Simulation with Sliders")
+
+# Fixed vertical rail (x=0)
+ax.plot([0, 0], [0, 10], 'b-', lw=3)
+
+# Horizontal rail (moves with q1) and red dot (tool)
+horiz_line, = ax.plot([], [], 'b-', lw=4)
+end_eff_dot, = ax.plot([], [], 'ro', markersize=8)
+
+# Info text
+end_eff_text = ax.text(0.05, 0.95, '', transform=ax.transAxes)
+
+# ====== Initial Plot ======
+def update_plot(q1, q2):
+    # horizontal rail at height q1
+    horiz_line.set_data([0, 10], [q1, q1])
+    # red dot at (q2, q1)
+    end_eff_dot.set_data([q2], [q1])
+    # info text
+    end_eff_text.set_text(f"End-Effector: ({q2:.2f}, {q1:.2f})")
+    fig.canvas.draw_idle()
+
+update_plot(q1_0, q2_0)
+
+# ====== Sliders ======
+ax_q1 = plt.axes([0.2, 0.15, 0.65, 0.03])  # vertical slider
+ax_q2 = plt.axes([0.2, 0.1, 0.65, 0.03])   # horizontal slider
+
+slider_q1 = Slider(ax_q1, 'Vertical q1', 0.0, 10.0, valinit=q1_0)
+slider_q2 = Slider(ax_q2, 'Horizontal q2', 0.0, 10.0, valinit=q2_0)
+
+def slider_update(val):
+    update_plot(slider_q1.val, slider_q2.val)
+
+slider_q1.on_changed(slider_update)
+slider_q2.on_changed(slider_update)
+
+plt.show()

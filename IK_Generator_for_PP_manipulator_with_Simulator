@@ -1,0 +1,139 @@
+import numpy as np
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
+# ====== Robot Parameters ======
+L1 = 10.0  # vertical prismatic rail (fixed length for drawing)
+L2 = 10.0  # horizontal prismatic rail (fixed length for drawing)
+
+# ====== Inverse Kinematics for PP Robot ======
+def ik(x, y):
+    """
+    For PP robot:
+    q1 -> vertical prismatic displacement (y)
+    q2 -> horizontal prismatic displacement (x)
+    """
+    q1 = y
+    q2 = x
+    return q1, q2
+
+# ====== Run IK and Save Output ======
+def run_ik():
+    try:
+        # Get user input
+        x_expr = x_entry.get()
+        y_expr = y_entry.get()
+        t_end = float(t_entry.get())
+        steps = int(steps_entry.get())
+
+        # Generate time vector
+        t = np.linspace(0, t_end, steps)
+
+        # Evaluate user functions for x(t), y(t)
+        x_vals = [eval(x_expr, {"t": val, "np": np}) for val in t]
+        y_vals = [eval(y_expr, {"t": val, "np": np}) for val in t]
+
+        # Do IK
+        q1s, q2s = [], []
+        for x, y in zip(x_vals, y_vals):
+            q1, q2 = ik(x, y)
+            q1s.append(q1)
+            q2s.append(q2)
+
+        # Save CSV
+        data = {"time": t, "q1 (vert)": q1s, "q2 (horiz)": q2s}
+        df = pd.DataFrame(data)
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                                 filetypes=[("CSV files", "*.csv")])
+        if file_path:
+            df.to_csv(file_path, index=False)
+            messagebox.showinfo("Success", f"File saved as {file_path}")
+
+        # Launch simulator
+        simulate(x_vals, y_vals, q1s, q2s)
+
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
+
+# ====== Simulator (Animation) ======
+def simulate(x_vals, y_vals, q1s, q2s):
+    fig, ax = plt.subplots()
+    ax.set_xlim(-2, L2 + 2)
+    ax.set_ylim(-2, L1 + 2)
+    ax.set_aspect("equal")
+    ax.set_title("PP Robot Simulator")
+
+    # Fixed vertical rail (left side)
+    ax.plot([0, 0], [0, L1], 'k-', lw=3)
+
+    # Moving horizontal rail (changes with q1)
+    horiz_line, = ax.plot([], [], 'b-', lw=3)
+
+    # End effector (dot)
+    end_eff, = ax.plot([], [], 'ro', markersize=8)
+
+    # Trace path of end effector
+    trace, = ax.plot([], [], 'r--', lw=1)
+
+    # Info box
+    info_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, fontsize=10,
+                        verticalalignment='top', bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.7))
+
+    x_history, y_history = [], []
+
+    def update(i):
+        q1, q2 = q1s[i], q2s[i]
+
+        # Horizontal rail at height q1
+        horiz_line.set_data([0, L2], [q1, q1])
+
+        # End effector at (q2, q1) → pass as lists
+        end_eff.set_data([q2], [q1])
+
+        # Trace path
+        x_history.append(q2)
+        y_history.append(q1)
+        trace.set_data(x_history, y_history)
+
+        # Update info box
+        info_text.set_text(f"Step: {i+1}\nq1 (vert) = {q1:.2f}\nq2 (horiz) = {q2:.2f}")
+
+        return horiz_line, end_eff, trace, info_text
+
+    ani = animation.FuncAnimation(fig, update, frames=len(x_vals),
+                                  interval=100, blit=False, repeat=False)
+
+    plt.show()
+
+# ====== GUI Setup ======
+root = tk.Tk()
+root.title("PP Robot - IK Generator & Simulator")
+
+tk.Label(root, text="x(t) function:").grid(row=0, column=0, sticky="w")
+x_entry = tk.Entry(root, width=40)
+x_entry.insert(0, "5 + 5*np.cos(0.6*t)*np.cos(t)")  # default
+x_entry.grid(row=0, column=1)
+
+tk.Label(root, text="y(t) function:").grid(row=1, column=0, sticky="w")
+y_entry = tk.Entry(root, width=40)
+y_entry.insert(0, "5 + 5*np.cos(0.6*t)*np.sin(t)")  # default
+y_entry.grid(row=1, column=1)
+
+tk.Label(root, text="Simulation time (t_end):").grid(row=2, column=0, sticky="w")
+t_entry = tk.Entry(root, width=20)
+t_entry.insert(0, "15.8")
+t_entry.grid(row=2, column=1, sticky="w")
+
+tk.Label(root, text="Steps:").grid(row=3, column=0, sticky="w")
+steps_entry = tk.Entry(root, width=20)
+steps_entry.insert(0, "200")
+steps_entry.grid(row=3, column=1, sticky="w")
+
+run_button = tk.Button(root, text="Generate IK + Simulate", command=run_ik)
+run_button.grid(row=4, column=0, columnspan=2, pady=10)
+
+root.mainloop()

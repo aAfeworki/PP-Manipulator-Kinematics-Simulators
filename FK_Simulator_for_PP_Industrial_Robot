@@ -1,0 +1,160 @@
+import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")  # embed matplotlib in Tkinter
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.animation as animation
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
+
+# ====== Forward Kinematics (PP Robot) ======
+def fk(q1, q2):
+    x = q2   # horizontal displacement
+    y = q1   # vertical displacement
+    return x, y
+
+# ====== Globals ======
+ani = None
+is_paused = False
+frame_index = 0
+times, q1_list, q2_list = [], [], []
+x_history, y_history = [], []
+
+# ====== Animate function ======
+def animate(i):
+    global frame_index
+
+    if is_paused:
+        return horiz_line, end_eff, trace, end_eff_text
+
+    if frame_index >= len(q1_list):
+        return horiz_line, end_eff, trace, end_eff_text
+
+    q1, q2 = q1_list[frame_index], q2_list[frame_index]
+    x, y = fk(q1, q2)
+
+    # vertical rail is fixed at x=0, I just update horizontal rail + end effector
+    horiz_line.set_data([0, 10], [q1, q1])   # horizontal rail at height q1
+    end_eff.set_data([x], [y])               # end effector dot
+
+    # trace path
+    x_history.append(x)
+    y_history.append(y)
+    trace.set_data(x_history, y_history)
+
+    # update info box
+    end_eff_text.set_text(
+        f"t = {times[frame_index]:.2f}\nq1 = {q1:.2f}\nq2 = {q2:.2f}"
+    )
+
+    # highlight current line in text box
+    text_box.tag_remove("highlight", "1.0", tk.END)
+    line_number = f"{frame_index+1}.0"
+    text_box.tag_add("highlight", line_number, f"{line_number} lineend")
+    text_box.tag_config("highlight", background="yellow", foreground="black")
+    text_box.see(line_number)
+
+    frame_index += 1
+    return horiz_line, end_eff, trace, end_eff_text
+
+# ====== Run Trajectory ======
+def run_trajectory():
+    global ani, times, q1_list, q2_list, x_history, y_history, frame_index, is_paused
+
+    raw_text = text_box.get("1.0", tk.END).strip()
+    if not raw_text:
+        messagebox.showwarning("Warning", "No data pasted!")
+        return
+
+    # Parse pasted data (t, q1, q2)
+    lines = raw_text.splitlines()
+    times, q1_list, q2_list = [], [], []
+    for line in lines:
+        parts = line.split(",")
+        if len(parts) >= 3:
+            try:
+                t = float(parts[0])
+                q1 = float(parts[1])
+                q2 = float(parts[2])
+                times.append(t)
+                q1_list.append(q1)
+                q2_list.append(q2)
+            except ValueError:
+                continue
+
+    if not q1_list:
+        messagebox.showerror("Error", "Invalid data format!")
+        return
+
+    # Reset state
+    x_history, y_history = [], []
+    frame_index = 0
+    is_paused = False
+    pause_btn.config(text="Pause")
+    text_box.tag_remove("highlight", "1.0", tk.END)
+
+    # Clear previous animation
+    if ani:
+        ani.event_source.stop()
+
+    ani = animation.FuncAnimation(
+        fig, animate,
+        frames=len(q1_list),
+        interval=500,
+        blit=True,
+        repeat=True,
+        cache_frame_data=False
+    )
+    canvas.draw()
+
+# ====== Pause/Resume ======
+def toggle_pause():
+    global is_paused
+    is_paused = not is_paused
+    pause_btn.config(text="Resume" if is_paused else "Pause")
+
+# ====== Tkinter GUI ======
+root = tk.Tk()
+root.title("PP Robot - Forward Kinematics Simulator")
+
+# Layout: left text box, right plot
+frame = tk.Frame(root)
+frame.pack(fill="both", expand=True)
+
+# Textbox for trajectory
+text_box = scrolledtext.ScrolledText(frame, width=30, height=20, wrap=tk.WORD)
+text_box.pack(side="left", fill="y", padx=5, pady=5)
+
+example_text = "0,2,3\n1,4,5\n2,6,8\n3,8,10"
+text_box.insert(tk.END, example_text)
+
+# Matplotlib Figure
+fig, ax = plt.subplots(figsize=(5,5))
+ax.set_xlim(-2, 12)
+ax.set_ylim(-2, 12)
+ax.set_aspect("equal")
+ax.set_title("PP Robot - FK Animation")
+
+# fixed vertical rail
+ax.plot([0, 0], [0, 10], 'k-', lw=3)
+
+# moving parts
+horiz_line, = ax.plot([], [], 'b-', lw=3)     # horizontal slider rail
+end_eff, = ax.plot([], [], 'ro', markersize=8)  # end effector
+trace, = ax.plot([], [], 'r--', lw=1)
+end_eff_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, va="top")
+
+canvas = FigureCanvasTkAgg(fig, master=frame)
+canvas.get_tk_widget().pack(side="right", fill="both", expand=True)
+
+# Control buttons
+button_frame = tk.Frame(root)
+button_frame.pack(pady=5)
+
+run_btn = tk.Button(button_frame, text="Run Trajectory", command=run_trajectory)
+run_btn.pack(side="left", padx=5)
+
+pause_btn = tk.Button(button_frame, text="Pause", command=toggle_pause)
+pause_btn.pack(side="left", padx=5)
+
+root.mainloop()
